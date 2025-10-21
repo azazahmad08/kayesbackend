@@ -1,3 +1,4 @@
+// 🌿 Rootx Admin Backend (Full Fixed Version)
 require("dotenv").config();
 require("express-async-errors");
 
@@ -46,18 +47,14 @@ const startServer = async () => {
     await mongoose.connect(MONGODB_URI, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 30000, // wait up to 30s
+      serverSelectionTimeoutMS: 30000,
     });
-
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-    });
+    app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
   } catch (err) {
     console.error("❌ MongoDB connection failed:", err.message);
     process.exit(1);
   }
 };
-
 startServer();
 
 /* ----------------- Middlewares ----------------- */
@@ -70,14 +67,14 @@ const { Types } = mongoose;
 const isValidObjectId = (v) => Types.ObjectId.isValid(v);
 
 /* ----------------- Models ----------------- */
-/** Product */
+// Product
 const ProductSchema = new mongoose.Schema({
   title: { type: String, required: true, trim: true },
   code: { type: String, required: true, unique: true, trim: true },
-  description: { type: String },
+  description: String,
   price: { type: Number, required: true, min: 0 },
   priceAfterDiscount: { type: Number, min: 0 },
-  imageUrl: { type: String },
+  imageUrl: String,
   sizes: { type: [String], default: ["S", "M", "L", "XL", "XXL"] },
   categories: {
     type: [String],
@@ -93,10 +90,9 @@ const ProductSchema = new mongoose.Schema({
 });
 ProductSchema.index({ createdAt: -1 });
 ProductSchema.index({ title: "text", description: "text", code: "text" });
-
 const Product = mongoose.model("Product", ProductSchema);
 
-/** Order */
+// Order
 const OrderProductSchema = new mongoose.Schema(
   {
     productId: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
@@ -105,7 +101,7 @@ const OrderProductSchema = new mongoose.Schema(
     price: Number,
     quantity: { type: Number, default: 1, min: 1 },
     size: String,
-    color: String, // ✅ product-level color
+    color: String,
     imageUrl: String,
     category: String,
     customFields: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -115,13 +111,13 @@ const OrderProductSchema = new mongoose.Schema(
 
 const OrderSchema = new mongoose.Schema({
   products: { type: [OrderProductSchema], required: true },
-  customerName: { type: String, trim: true },
-  phone: { type: String, trim: true },
-  division: { type: String, trim: true },
-  district: { type: String, trim: true },
-  upazila: { type: String, trim: true },
-  address: { type: String },
-  color: { type: String, trim: true, default: "" }, // ✅ top-level color (from ProcessPage form)
+  customerName: String,
+  phone: String,
+  division: String,
+  district: String,
+  upazila: String,
+  address: String,
+  color: { type: String, default: "" },
   totalValue: { type: Number, required: true, min: 0 },
   deliveryCharge: { type: Number, default: 0, min: 0 },
   status: {
@@ -132,13 +128,12 @@ const OrderSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
   customFields: { type: mongoose.Schema.Types.Mixed, default: {} },
 });
-
 const Order = mongoose.model("Order", OrderSchema);
 
-/** Color (optional master list) */
+// Color
 const ColorSchema = new mongoose.Schema({
-  name: { type: String, required: true, trim: true },
-  hex: { type: String, trim: true },
+  name: { type: String, required: true },
+  hex: String,
   createdAt: { type: Date, default: Date.now },
 });
 const Color = mongoose.model("Color", ColorSchema);
@@ -156,25 +151,30 @@ const upload = multer({
 
 app.post("/api/products/upload", upload.single("image"), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: "No file uploaded" });
-    }
+    if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+
     const imgbbKey = process.env.IMGBB_KEY;
-    if (!imgbbKey) {
+    if (!imgbbKey)
       return res.status(500).json({ message: "IMGBB_KEY missing in .env" });
-    }
+
     const formData = new FormData();
     formData.append("image", req.file.buffer.toString("base64"));
+
     const response = await axios.post(
       `https://api.imgbb.com/1/upload?key=${imgbbKey}`,
       formData,
       { headers: formData.getHeaders(), timeout: 100000 }
     );
+
     const { url, display_url } = response?.data?.data || {};
-    res.json({ url: url || display_url });
+    res.json({ success: true, imageUrl: url || display_url });
   } catch (err) {
-    console.error("Upload failed:", err.message);
-    res.status(500).json({ message: "Image upload failed" });
+    console.error("❌ Upload failed:", err.response?.data || err.message);
+    res.status(500).json({
+      success: false,
+      message: "Image upload failed",
+      error: err.message,
+    });
   }
 });
 
@@ -187,7 +187,8 @@ app.post(
     if (!errors.isEmpty())
       return res.status(400).json({ errors: errors.array() });
 
-    const { title, code, description, price, priceAfterDiscount, imageUrl, categories, sizes } = req.body;
+    const { title, code, description, price, priceAfterDiscount, imageUrl, categories, sizes } =
+      req.body;
 
     const exists = await Product.findOne({ code });
     if (exists)
@@ -203,6 +204,7 @@ app.post(
       categories: categories || [],
       sizes: sizes || ["S", "M", "L", "XL", "XXL"],
     });
+
     await p.save();
     res.status(201).json(p);
   }
@@ -260,27 +262,26 @@ app.post("/api/orders", async (req, res) => {
     district,
     upazila,
     address,
-    color, // ✅ top-level color from ProcessPage
+    color,
     deliveryCharge,
-    customFields
+    customFields,
   } = req.body;
 
-  if (!products || !Array.isArray(products) || products.length === 0) {
+  if (!products || !Array.isArray(products) || products.length === 0)
     return res.status(400).json({ message: "Products are required" });
-  }
 
   let productTotal = 0;
   const detailed = [];
 
   for (const p of products) {
     const pid = p?.productId;
-    if (!pid || !isValidObjectId(pid)) {
+    if (!pid || !isValidObjectId(pid))
       return res.status(400).json({ message: `Invalid productId: ${pid}` });
-    }
+
     const prod = await Product.findById(pid);
-    if (!prod) {
+    if (!prod)
       return res.status(400).json({ message: `Product ${pid} not found` });
-    }
+
     const unitPrice =
       typeof prod.priceAfterDiscount === "number" && prod.priceAfterDiscount >= 0
         ? prod.priceAfterDiscount
@@ -295,7 +296,7 @@ app.post("/api/orders", async (req, res) => {
       price: unitPrice,
       quantity: qty,
       size: p.size || null,
-      color: (p.color ?? "").toString().trim(), // ✅ include product-level color
+      color: (p.color ?? "").trim(),
       imageUrl: p.imageUrl || prod.imageUrl || "",
       category: p.category || (prod.categories?.[0] || null),
       customFields: p.customFields || {},
@@ -310,7 +311,7 @@ app.post("/api/orders", async (req, res) => {
     district,
     upazila,
     address,
-    color: (color ?? "").toString().trim(), // ✅ save top-level color
+    color: (color ?? "").trim(),
     totalValue: productTotal,
     deliveryCharge: Number(deliveryCharge || 0),
     customFields: customFields || {},
@@ -371,11 +372,10 @@ app.delete("/api/orders/:id", async (req, res) => {
   res.json({ message: "Order removed" });
 });
 
-/* ----------------- Colors (Optional master list) ----------------- */
+/* ----------------- Colors ----------------- */
 app.post("/api/colors", async (req, res) => {
   const { name, hex } = req.body;
   if (!name) return res.status(400).json({ message: "Color name required" });
-
   const c = new Color({ name, hex });
   await c.save();
   res.status(201).json(c);
@@ -421,6 +421,8 @@ app.get("/api/dashboard/monthly-sales", async (req, res) => {
 
 /* ----------------- Root & Error Handler ----------------- */
 app.get("/", (req, res) => res.send("✅ Rootx Admin Backend running"));
+
+app.use((req, res) => res.status(404).json({ message: "Route not found" }));
 
 app.use((err, req, res, next) => {
   console.error("❌", err.stack);
